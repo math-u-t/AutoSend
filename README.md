@@ -140,4 +140,6 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
 
 トリガー「一分に一度実行」で「send_Scheduled_Messages」を選択
 
+トリガー「フォーム送信時に実行」で「send_Error_Email」を選択
+
 トリガーを承認することで使用できる
