@@ -112,11 +112,11 @@ webhookURL : ＜送信するWebhookURL＞
 
 予約コードを生成する関数。
 
-'''rb
+```rb
 
 abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
 
-'''
+```
 
 の中から、指定された文字の長さ分のランダムコードを返す。
 
