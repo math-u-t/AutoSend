@@ -1,3 +1,8 @@
+/*
+  ANY_MAIL
+  には送信したいメールアドレスを設定します（認証済みのものを）
+*/
+
 function send_Scheduled_Messages() {
   const startTime = new Date().getTime();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
@@ -6,9 +11,12 @@ function send_Scheduled_Messages() {
   const rowsToDelete = [];
   const messagesToSend = [];
 
+  Logger.log('send_Scheduled_Messages started at: ' + new Date());
+
   for (let i = 1; i < data.length; i++) {
     const elapsedTime = (new Date().getTime() - startTime) / 1000;
     if (elapsedTime > 5) {
+      Logger.log('Execution time exceeded 5 seconds, stopping script.');
       throw new Error('Execution time exceeded 5 seconds, stopping script.');
     }
 
@@ -18,12 +26,16 @@ function send_Scheduled_Messages() {
     const sendTime = row[5] ? new Date(row[5]) : null;
     const webhookUrl = row[6];
 
+    Logger.log(`Row ${i + 1}: email=${email}, message length=${message ? message.length : 0}, sendTime=${sendTime}, webhookUrl=${webhookUrl}`);
+
     if (!sendTime || (currentTime - sendTime) / (1000 * 60) >= 2) {
+      Logger.log(`Row ${i + 1} is outdated or no sendTime, scheduling for deletion.`);
       rowsToDelete.push(i + 1);
       continue;
     }
 
     if (!message || !webhookUrl) {
+      Logger.log(`Row ${i + 1} missing message or webhookUrl, skipping.`);
       continue;
     }
 
@@ -32,10 +44,11 @@ function send_Scheduled_Messages() {
 
       if (finalMessage.includes('<hide>')) {
         finalMessage = finalMessage.replace(/<hide>$/, '').trim();
-
+        Logger.log(`Row ${i + 1}: <hide> tag found and removed.`);
       } else {
         if (email) {
           finalMessage += `\n《${email}》\n`;
+          Logger.log(`Row ${i + 1}: email appended to message.`);
         }
       }
 
@@ -52,35 +65,56 @@ function send_Scheduled_Messages() {
     };
 
     try {
+      Logger.log(`Sending message for row ${rowIndex} to webhook: ${url}`);
       UrlFetchApp.fetch(url, options);
       rowsToDelete.push(rowIndex);
+      Logger.log(`Message sent successfully for row ${rowIndex}`);
     } catch (error) {
+      Logger.log(`Failed to send message for row ${rowIndex}: ${error}`);
     }
   });
 
   if (rowsToDelete.length > 0) {
     rowsToDelete.sort((a, b) => b - a);
+    Logger.log(`Deleting rows: ${rowsToDelete.join(', ')}`);
     rowsToDelete.forEach(rowNum => sheet.deleteRow(rowNum));
   }
+
+  Logger.log('send_Scheduled_Messages finished at: ' + new Date());
 }
 
 // エラーの詳細
-function send_Custom_Email() {
+function Set_Error_message() {
   const startTime = new Date().getTime();
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-  var data = sheet.getRange(lastRow, 1, 1, 7).getValues()[0];
-  if (data[2] !== '送信予約') return;
-  var scheduledTime = new Date(data[5]);
-  var now = new Date();
-  var diffMinutes = (scheduledTime - now) / 60000;
-  var elapsedTime = (new Date().getTime() - startTime) / 1000;
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const lastRow = sheet.getLastRow();
+
+  Logger.log('Set_Error_message started at: ' + new Date());
+
+  if (lastRow < 2) {
+    Logger.log('No data rows found, exiting.');
+    return;
+  }
+
+  const data = sheet.getRange(lastRow, 1, 1, 7).getValues()[0];
+
+  if (data[2] !== '送信予約') {
+    Logger.log('Last row status is not "送信予約", exiting.');
+    return;
+  }
+
+  const scheduledTime = new Date(data[5]);
+  const now = new Date();
+  const diffMinutes = (scheduledTime - now) / 60000;
+
+  let elapsedTime = (new Date().getTime() - startTime) / 1000;
   if (elapsedTime > 5) {
+    Logger.log('Execution time exceeded 5 seconds, stopping script.');
     throw new Error('Execution time exceeded 5 seconds, stopping script.');
   }
 
   if (data[3].length > 4000) {
+    Logger.log('Message length exceeds 4000 characters.');
     send_Error_Email(data[1], "送信内容が4000文字を超えています。\n送信内容を短くしてください。");
     sheet.deleteRow(lastRow);
     return;
@@ -88,45 +122,56 @@ function send_Custom_Email() {
 
   elapsedTime = (new Date().getTime() - startTime) / 1000;
   if (elapsedTime > 5) {
+    Logger.log('Execution time exceeded 5 seconds, stopping script.');
     throw new Error('Execution time exceeded 5 seconds, stopping script.');
   }
 
   if (isNaN(scheduledTime.getTime()) || diffMinutes < -2) {
+    Logger.log('Scheduled time is invalid or in the past.');
     send_Error_Email(data[1], "送信予定時間が過去です。\n送信予定時間は未来になるようにしてください。");
     sheet.deleteRow(lastRow);
     return;
   }
 
   if (diffMinutes > 60 * 24 * 30) {
+    Logger.log('Scheduled time is more than 1 month in the future.');
     send_Error_Email(data[1], "送信予定時間が1か月以上先です。\n送信予定時間は1か月よりも最近にしてください。");
     sheet.deleteRow(lastRow);
     return;
   }
 
-  var userCode = generate_Random_Code(30);
+  const userCode = generate_Code(30);
   sheet.getRange(lastRow, 5).setValue(userCode);
-  var emailContent = create_Email_Content(data, userCode, scheduledTime);
+  const emailContent = create_Email_Content(data, userCode, scheduledTime);
 
   elapsedTime = (new Date().getTime() - startTime) / 1000;
   if (elapsedTime > 5) {
+    Logger.log('Execution time exceeded 5 seconds, stopping script.');
     throw new Error('Execution time exceeded 5 seconds, stopping script.');
   }
 
   try {
-    GmailApp.sendEmail(data[1], "自動送信予約の詳細", emailContent, { name: "予約の確認（自動）" });
+    Logger.log(`Sending confirmation email to ${data[1]}`);
+    sendEmailWithFrom(data[1], "自動送信予約の詳細", emailContent);
     sheet.getRange(lastRow, 3).setValue('送信済み');
+    Logger.log('Confirmation email sent and status updated.');
   } catch (e) {
+    Logger.log('Failed to send confirmation email: ' + e);
   }
+
+  Logger.log('Set_Error_message finished at: ' + new Date());
 }
 
 // エラーメッセージ送信
 function send_Error_Email(recipient, errorMessage) {
-  var subject = "予約できませんでした";
-  var body = "詳細：" + errorMessage +
+  const subject = "予約できませんでした";
+  const body = "詳細：" + errorMessage +
     "\nもう一度予約を行ってください。" +
     "\n\nこのメッセージは自動送信されています。" +
     "\n返信しないでください。";
-  generalization_send_Email(recipient, subject, body);
+
+  Logger.log(`Sending error email to ${recipient}: ${errorMessage}`);
+  sendEmailWithFrom(recipient, subject, body);
 }
 
 // 成功メッセージ送信
@@ -156,11 +201,11 @@ function format_Date(date) {
 }
 
 // 予約コード生成
-function generate_Random_Code(length) {
+function generate_Code(length) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const charsLength = chars.length;
   let code = new Array(length);
-  
+
   for (let i = 0; i < length; i++) {
     code[i] = chars[Math.floor(Math.random() * charsLength)];
   }
@@ -168,10 +213,15 @@ function generate_Random_Code(length) {
   return code.join('');
 }
 
-// 一般化送信
-function generalization_send_Email(email, subject, body) {
+// メール送信の共通関数（from指定あり）
+function sendEmailWithFrom(to, subject, body) {
   try {
-    GmailApp.sendEmail(email, subject, body, { name: "予約の確認《自動送信》" });
+    GmailApp.sendEmail(to, subject, body, {
+      from: ANY_MAIL,
+      name: "自動送信予約確認"
+    });
+    Logger.log(`Email sent to ${to} with subject "${subject}"`);
   } catch (e) {
+    Logger.log(`Failed to send email to ${to}: ${e}`);
   }
 }
